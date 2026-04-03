@@ -85,7 +85,7 @@ class ControlPanel(discord.ui.View):
         if not data["users"].get(uid, {}).get("redeemed"):
             await interaction.response.send_message("❌ คุณยังไม่ได้ Redeem Key!", ephemeral=True)
             return
-        role = interaction.guild.get_role(BUYER_ROLE_ID)
+        role = interaction.guild.get_role(1481631709693743104)
         if not role:
             await interaction.response.send_message("❌ ไม่พบ Role กรุณาแจ้ง Admin", ephemeral=True)
             return
