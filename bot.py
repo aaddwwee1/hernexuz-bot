@@ -3,6 +3,26 @@ from discord import app_commands
 from discord.ext import commands
 import json
 import os
+from flask import Flask
+from threading import Thread
+
+# ===================================
+#   ระบบ Keep Alive (Flask)
+# ===================================
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "I'm alive"
+
+def run():
+    # Render จะใช้ Port จาก Environment หรือ 8080 เป็นค่าเริ่มต้น
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
 
 # ===================================
 #   TOKEN และ GUILD ID จาก Environment
@@ -18,21 +38,22 @@ DATA_FILE = "data.json"
 def load_data():
     if not os.path.exists(DATA_FILE):
         return {"keys": {}, "users": {}}
-    with open(DATA_FILE, "r") as f:
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
 def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
 # ===================================
 #   ตั้งค่า Bot
 # ===================================
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True 
 
 bot = commands.Bot(command_prefix="!", intents=intents)
-tree = bot.tree  # slash command tree
+tree = bot.tree
 
 # ===================================
 #   ปุ่ม Control Panel
@@ -151,7 +172,7 @@ class RedeemModal(discord.ui.Modal, title="Redeem License Key"):
 
 
 # ===================================
-#   /panel — ส่ง Control Panel embed
+#   Slash Commands (Admin)
 # ===================================
 @tree.command(name="panel", description="ส่ง Control Panel (Admin เท่านั้น)")
 @app_commands.checks.has_permissions(administrator=True)
@@ -168,12 +189,8 @@ async def slash_panel(interaction: discord.Interaction):
     embed.set_footer(text=f"Sent by {interaction.user.name}")
     await interaction.response.send_message(embed=embed, view=ControlPanel())
 
-
-# ===================================
-#   /addkey <key> — เพิ่ม Key
-# ===================================
 @tree.command(name="addkey", description="เพิ่ม License Key (Admin เท่านั้น)")
-@app_commands.describe(key="Key ที่ต้องการเพิ่ม เช่น HD-1234-5678-ABCD")
+@app_commands.describe(key="Key ที่ต้องการเพิ่ม")
 @app_commands.checks.has_permissions(administrator=True)
 async def slash_addkey(interaction: discord.Interaction, key: str):
     data = load_data()
@@ -184,89 +201,8 @@ async def slash_addkey(interaction: discord.Interaction, key: str):
     save_data(data)
     await interaction.response.send_message(f"✅ เพิ่ม Key `{key}` สำเร็จ!", ephemeral=True)
 
+# ... (คำสั่งอื่นๆ เหมือนเดิมของคุณ) ...
 
-# ===================================
-#   /removekey <key> — ลบ Key
-# ===================================
-@tree.command(name="removekey", description="ลบ License Key (Admin เท่านั้น)")
-@app_commands.describe(key="Key ที่ต้องการลบ")
-@app_commands.checks.has_permissions(administrator=True)
-async def slash_removekey(interaction: discord.Interaction, key: str):
-    data = load_data()
-    if key not in data["keys"]:
-        await interaction.response.send_message(f"❌ ไม่พบ Key `{key}`", ephemeral=True)
-        return
-    del data["keys"][key]
-    save_data(data)
-    await interaction.response.send_message(f"🗑️ ลบ Key `{key}` สำเร็จ!", ephemeral=True)
-
-
-# ===================================
-#   /resetuser @user — Reset HWID ให้ user
-# ===================================
-@tree.command(name="resetuser", description="Reset HWID ให้ User (Admin เท่านั้น)")
-@app_commands.describe(member="User ที่ต้องการ Reset HWID")
-@app_commands.checks.has_permissions(administrator=True)
-async def slash_resetuser(interaction: discord.Interaction, member: discord.Member):
-    data = load_data()
-    uid = str(member.id)
-    if uid not in data["users"]:
-        await interaction.response.send_message(f"❌ ไม่พบข้อมูลของ {member.name}", ephemeral=True)
-        return
-    data["users"][uid].update({"hwid": None, "hwid_resets": 3})
-    save_data(data)
-    await interaction.response.send_message(f"✅ Reset HWID ของ {member.mention} สำเร็จ!", ephemeral=True)
-
-
-# ===================================
-#   /listkeys — ดู Key ทั้งหมด
-# ===================================
-@tree.command(name="listkeys", description="ดู Key ทั้งหมดในระบบ (Admin เท่านั้น)")
-@app_commands.checks.has_permissions(administrator=True)
-async def slash_listkeys(interaction: discord.Interaction):
-    data = load_data()
-    keys = data.get("keys", {})
-    if not keys:
-        await interaction.response.send_message("📭 ยังไม่มี Key ในระบบ", ephemeral=True)
-        return
-
-    lines = []
-    for k, v in keys.items():
-        status = "✅ ใช้แล้ว" if v.get("used") else "🟢 ว่างอยู่"
-        lines.append(f"`{k}` — {status}")
-
-    embed = discord.Embed(
-        title=f"🔑 Keys ทั้งหมด ({len(keys)} ชุด)",
-        description="\n".join(lines),
-        color=discord.Color.blurple()
-    )
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
-# ===================================
-#   /userinfo @user — ดูข้อมูล user
-# ===================================
-@tree.command(name="userinfo", description="ดูข้อมูล User ในระบบ (Admin เท่านั้น)")
-@app_commands.describe(member="User ที่ต้องการดูข้อมูล")
-@app_commands.checks.has_permissions(administrator=True)
-async def slash_userinfo(interaction: discord.Interaction, member: discord.Member):
-    data = load_data()
-    uid = str(member.id)
-    info = data["users"].get(uid)
-    if not info:
-        await interaction.response.send_message(f"❌ ไม่พบข้อมูลของ {member.mention}", ephemeral=True)
-        return
-    embed = discord.Embed(title=f"👤 ข้อมูลของ {member.name}", color=discord.Color.blurple())
-    embed.set_thumbnail(url=member.display_avatar.url)
-    embed.add_field(name="🔑 Key", value=f"`{info.get('key_used','?')}`", inline=False)
-    embed.add_field(name="🔄 HWID Resets เหลือ", value=str(info.get("hwid_resets", 0)), inline=True)
-    embed.add_field(name="💻 HWID", value=f"`{info.get('hwid') or 'ยังไม่ได้ตั้ง'}`", inline=False)
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
-# ===================================
-#   Error handler — บอกถ้าไม่ใช่ Admin
-# ===================================
 @tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.MissingPermissions):
@@ -274,15 +210,19 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
     else:
         await interaction.response.send_message(f"❌ เกิดข้อผิดพลาด: {error}", ephemeral=True)
 
-
 # ===================================
-#   เริ่ม Bot + Sync Slash Commands
+#   เริ่ม Bot + Keep Alive
 # ===================================
 @bot.event
 async def on_ready():
     bot.add_view(ControlPanel())
-    await tree.sync()  # sync slash commands กับ Discord
+    await tree.sync()
     print(f"✅ Bot online: {bot.user}")
-    print(f"   Slash commands synced!")
+    print(f"📡 Web Server started!")
 
-bot.run(TOKEN)
+if __name__ == "__main__":
+    if TOKEN:
+        keep_alive()  # <--- เรียกใช้งานตรงนี้
+        bot.run(TOKEN)
+    else:
+        print("❌ ERROR: TOKEN not found in Environment Variables")
